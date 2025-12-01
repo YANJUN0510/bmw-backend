@@ -284,3 +284,32 @@ exports.getAllCategories = async (req, res) => {
     });
   }
 };
+
+exports.getProductByCode = async (req, res) => {
+  try {
+    const { code } = req.params;
+    const { data, error } = await supabase
+      .from('products')
+      .select('*')
+      .eq('code', code)
+      .single();
+
+    if (error) {
+      if (error.code === 'PGRST116') {
+        return res.status(404).json({ status: 'error', message: 'Product not found' });
+      }
+      throw error;
+    }
+
+    res.json({
+      status: 'success',
+      data: data,
+    });
+  } catch (error) {
+    console.error('Error fetching product:', error);
+    res.status(500).json({
+      status: 'error',
+      message: error.message,
+    });
+  }
+};
