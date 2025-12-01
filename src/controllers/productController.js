@@ -230,3 +230,57 @@ exports.getAllProducts = async (req, res) => {
     });
   }
 };
+
+exports.getAllStyles = async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('products')
+      .select('style');
+
+    if (error) {
+      throw error;
+    }
+
+    // Extract unique styles
+    const styles = [...new Set(data.map(item => item.style))];
+
+    res.json({
+      status: 'success',
+      results: styles.length,
+      data: styles,
+    });
+  } catch (error) {
+    console.error('Error fetching styles:', error);
+    res.status(500).json({
+      status: 'error',
+      message: error.message,
+    });
+  }
+};
+
+exports.getAllCategories = async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('products')
+      .select('category');
+
+    if (error) {
+      throw error;
+    }
+
+    // Extract unique categories
+    const categories = [...new Set(data.map(item => item.category))];
+
+    res.json({
+      status: 'success',
+      results: categories.length,
+      data: categories,
+    });
+  } catch (error) {
+    console.error('Error fetching categories:', error);
+    res.status(500).json({
+      status: 'error',
+      message: error.message,
+    });
+  }
+};
