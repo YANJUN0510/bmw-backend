@@ -104,7 +104,11 @@ exports.updateProduct = async (req, res) => {
   try {
     const { code } = req.params;
     const { name, style, category, description, long_description, specs } = req.body;
-    const file = req.file;
+    
+    // Handle multiple files
+    const files = req.files || {};
+    const imageFile = files['image'] ? files['image'][0] : null;
+    const galleryFiles = files['gallery'] || [];
 
     let updateData = {
       name,
@@ -118,16 +122,17 @@ exports.updateProduct = async (req, res) => {
     // Remove undefined keys
     Object.keys(updateData).forEach(key => updateData[key] === undefined && delete updateData[key]);
 
-    if (file) {
-      const fileExt = file.originalname.split('.').pop();
+    // Handle Main Image
+    if (imageFile) {
+      const fileExt = imageFile.originalname.split('.').pop();
       const fileName = `${code}.${fileExt}`;
       const filePath = `${fileName}`;
 
       const { error: storageError } = await supabase
         .storage
         .from(BUCKET_NAME)
-        .upload(filePath, file.buffer, {
-          contentType: file.mimetype,
+        .upload(filePath, imageFile.buffer, {
+          contentType: imageFile.mimetype,
           upsert: true
         });
 
@@ -141,6 +146,34 @@ exports.updateProduct = async (req, res) => {
         .getPublicUrl(filePath);
       
       updateData.image = publicUrl;
+    }
+
+    // Handle Gallery Images
+    if (galleryFiles.length > 0) {
+      const galleryUrls = [];
+      for (let i = 0; i < galleryFiles.length; i++) {
+        const file = galleryFiles[i];
+        const galleryFileExt = file.originalname.split('.').pop();
+        const galleryFileName = `${code}_gallery_${i + 1}.${galleryFileExt}`;
+        
+        const { error: galleryError } = await supabase
+          .storage
+          .from(BUCKET_NAME)
+          .upload(galleryFileName, file.buffer, {
+            contentType: file.mimetype,
+            upsert: true
+          });
+
+        if (galleryError) throw galleryError;
+
+        const { data: { publicUrl } } = supabase
+          .storage
+          .from(BUCKET_NAME)
+          .getPublicUrl(galleryFileName);
+        
+        galleryUrls.push(publicUrl);
+      }
+      updateData.gallery = galleryUrls;
     }
 
     const { data, error } = await supabase
