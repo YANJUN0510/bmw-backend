@@ -12,7 +12,7 @@ router.get('/', productController.getAllProducts);
 router.get('/styles', productController.getAllStyles);
 router.get('/categories', productController.getAllCategories);
 router.get('/:code', productController.getProductByCode);
-router.post('/', upload.single('image'), productController.uploadProduct);
+router.post('/', upload.fields([{ name: 'image', maxCount: 1 }, { name: 'gallery', maxCount: 10 }]), productController.uploadProduct);
 router.put('/:code', upload.single('image'), productController.updateProduct);
 router.delete('/:code', productController.deleteProduct);
 

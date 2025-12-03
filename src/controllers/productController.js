@@ -5,22 +5,26 @@ const BUCKET_NAME = 'products';
 exports.uploadProduct = async (req, res) => {
   try {
     const { code, name, style, category, description, long_description, specs } = req.body;
-    const file = req.file;
+    
+    // Handle multiple files
+    const files = req.files || {};
+    const imageFile = files['image'] ? files['image'][0] : null;
+    const galleryFiles = files['gallery'] || [];
 
-    if (!file) {
-      return res.status(400).json({ status: 'error', message: 'Image file is required' });
+    if (!imageFile) {
+      return res.status(400).json({ status: 'error', message: 'Main image file is required' });
     }
 
-    // 1. Upload image to Supabase Storage
-    const fileExt = file.originalname.split('.').pop();
+    // 1. Upload main image
+    const fileExt = imageFile.originalname.split('.').pop();
     const fileName = `${code}.${fileExt}`;
     const filePath = `${fileName}`;
 
-    const { data: storageData, error: storageError } = await supabase
+    const { error: storageError } = await supabase
       .storage
       .from(BUCKET_NAME)
-      .upload(filePath, file.buffer, {
-        contentType: file.mimetype,
+      .upload(filePath, imageFile.buffer, {
+        contentType: imageFile.mimetype,
         upsert: true
       });
 
@@ -28,11 +32,36 @@ exports.uploadProduct = async (req, res) => {
       throw storageError;
     }
 
-    // 2. Get Public URL
-    const { data: { publicUrl } } = supabase
+    // Get Public URL for main image
+    const { data: { publicUrl: mainImageUrl } } = supabase
       .storage
       .from(BUCKET_NAME)
       .getPublicUrl(filePath);
+
+    // 2. Upload gallery images
+    const galleryUrls = [];
+    for (let i = 0; i < galleryFiles.length; i++) {
+      const file = galleryFiles[i];
+      const galleryFileExt = file.originalname.split('.').pop();
+      const galleryFileName = `${code}_gallery_${i + 1}.${galleryFileExt}`;
+      
+      const { error: galleryError } = await supabase
+        .storage
+        .from(BUCKET_NAME)
+        .upload(galleryFileName, file.buffer, {
+          contentType: file.mimetype,
+          upsert: true
+        });
+
+      if (galleryError) throw galleryError;
+
+      const { data: { publicUrl } } = supabase
+        .storage
+        .from(BUCKET_NAME)
+        .getPublicUrl(galleryFileName);
+      
+      galleryUrls.push(publicUrl);
+    }
 
     // 3. Insert into Database
     const { data, error } = await supabase
@@ -43,10 +72,11 @@ exports.uploadProduct = async (req, res) => {
           name,
           style,
           category,
-          image: publicUrl,
+          image: mainImageUrl,
+          gallery: galleryUrls,
           description,
           long_description,
-          specs: specs ? JSON.parse(specs) : null, // Assuming specs is sent as JSON string
+          specs: specs ? JSON.parse(specs) : null,
         },
       ])
       .select();
