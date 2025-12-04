@@ -317,3 +317,25 @@ exports.setFeatured = async (req, res) => {
     res.status(500).json({ status: 'error', message: error.message });
   }
 };
+
+exports.getAllCategories = async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('journals')
+      .select('category');
+
+    if (error) throw error;
+
+    // Extract unique categories
+    const categories = [...new Set(data.map(item => item.category))];
+
+    res.json({
+      status: 'success',
+      results: categories.length,
+      data: categories,
+    });
+  } catch (error) {
+    console.error('Error fetching journal categories:', error);
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+};
