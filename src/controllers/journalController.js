@@ -22,6 +22,32 @@ exports.getAllJournals = async (req, res) => {
   }
 };
 
+exports.getJournalById = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { data, error } = await supabase
+      .from('journals')
+      .select('*')
+      .eq('id', id)
+      .single();
+
+    if (error) {
+      if (error.code === 'PGRST116') {
+        return res.status(404).json({ status: 'error', message: 'Journal not found' });
+      }
+      throw error;
+    }
+
+    res.json({
+      status: 'success',
+      data: data,
+    });
+  } catch (error) {
+    console.error('Error fetching journal:', error);
+    res.status(500).json({ status: 'error', message: error.message });
+  }
+};
+
 exports.createJournal = async (req, res) => {
   try {
     const { title, excerpt, category, date, content, featured } = req.body;

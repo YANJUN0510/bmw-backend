@@ -8,6 +8,7 @@ const storage = multer.memoryStorage();
 const upload = multer({ storage: storage });
 
 router.get('/', journalController.getAllJournals);
+router.get('/:id', journalController.getJournalById);
 router.post('/', upload.single('image'), journalController.createJournal);
 router.put('/:id', upload.single('image'), journalController.updateJournal);
 router.delete('/:id', journalController.deleteJournal);
