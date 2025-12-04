@@ -121,6 +121,13 @@ exports.updateJournal = async (req, res) => {
     const { title, excerpt, category, date, content, featured } = req.body;
     const file = req.file;
 
+    // Get current journal state to check if it was featured
+    const { data: currentJournal } = await supabase
+      .from('journals')
+      .select('featured')
+      .eq('id', id)
+      .single();
+
     let updateData = {
       title,
       excerpt,
@@ -174,6 +181,24 @@ exports.updateJournal = async (req, res) => {
 
     if (data.length === 0) {
       return res.status(404).json({ status: 'error', message: 'Journal not found' });
+    }
+
+    // If we just un-featured this journal, set the latest one to featured
+    if (currentJournal?.featured && updateData.featured === false) {
+      const { data: latestJournal } = await supabase
+        .from('journals')
+        .select('id')
+        .neq('id', id) // Exclude the one we just updated
+        .order('date', { ascending: false })
+        .limit(1)
+        .single();
+      
+      if (latestJournal) {
+         await supabase
+           .from('journals')
+           .update({ featured: true })
+           .eq('id', latestJournal.id);
+      }
     }
 
     res.json({
