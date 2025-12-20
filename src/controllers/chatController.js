@@ -115,13 +115,20 @@ exports.handleChat = async (req, res) => {
         model: 'gpt-4o-mini',
         messages: apiMessages,
         temperature: 0.7,
-        max_tokens: 1000
+        max_tokens: 2000
       })
     });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('OpenAI API Error Response:', response.status, errorText);
+      throw new Error(`OpenAI API Error: ${response.status} - ${errorText}`);
+    }
 
     const data = await response.json();
 
     if (data.error) {
+      console.error('OpenAI API Error:', data.error);
       throw new Error(data.error.message);
     }
 
@@ -134,7 +141,7 @@ exports.handleChat = async (req, res) => {
     console.error('Error calling OpenAI:', error);
     res.status(500).json({ 
       status: 'error', 
-      message: "I apologize, but I'm having trouble connecting right now. Please try again later." 
+      message: error.message || "I apologize, but I'm having trouble connecting right now. Please try again later." 
     });
   }
 };
