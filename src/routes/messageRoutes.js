@@ -13,5 +13,6 @@ router.get('/', messageController.getAllMessages);
 router.get('/:id', messageController.getMessageById);
 router.get('/email/:email', messageController.getMessagesByEmail);
 router.get('/phone/:phone', messageController.getMessagesByPhone);
+router.patch('/:id/status', messageController.updateMessageStatus);
 
 module.exports = router;
