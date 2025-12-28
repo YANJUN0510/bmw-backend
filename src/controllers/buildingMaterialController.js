@@ -240,27 +240,50 @@ exports.getBuildingMaterialByCode = async (req, res) => {
 
 exports.getAllCategoriesAndSeries = async (req, res) => {
   try {
-    const { data, error } = await supabase
+    // 1. Fetch categories with prefixes from the category table
+    const { data: categoryData, error: categoryError } = await supabase
+      .from('building_material_category')
+      .select('category, prefix');
+
+    if (categoryError) throw categoryError;
+
+    // 2. Fetch existing materials to get series
+    const { data: materialData, error: materialError } = await supabase
       .from('building_material')
       .select('category, series');
 
-    if (error) throw error;
+    if (materialError) throw materialError;
 
-    // Process data to group series by category
-    const categories = {};
-    data.forEach(item => {
-      if (!categories[item.category]) {
-        categories[item.category] = new Set();
+    // 3. Process series
+    const seriesMap = {};
+    materialData.forEach(item => {
+      if (!seriesMap[item.category]) {
+        seriesMap[item.category] = new Set();
       }
       if (item.series) {
-        categories[item.category].add(item.series);
+        seriesMap[item.category].add(item.series);
       }
     });
 
-    const result = Object.keys(categories).map(category => ({
-      category,
-      series: Array.from(categories[category])
+    // 4. Merge data
+    // Start with defined categories
+    const result = categoryData.map(cat => ({
+      category: cat.category,
+      prefix: cat.prefix,
+      series: seriesMap[cat.category] ? Array.from(seriesMap[cat.category]) : []
     }));
+
+    // Add any categories found in materials but not in category table (legacy/orphan safety)
+    const definedCategories = new Set(categoryData.map(c => c.category));
+    Object.keys(seriesMap).forEach(catName => {
+      if (!definedCategories.has(catName)) {
+        result.push({
+          category: catName,
+          prefix: null, // No prefix defined
+          series: Array.from(seriesMap[catName])
+        });
+      }
+    });
 
     res.status(200).json({
       status: 'success',

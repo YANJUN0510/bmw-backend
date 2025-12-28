@@ -38,7 +38,7 @@ exports.getCategoryById = async (req, res) => {
 
 exports.createCategory = async (req, res) => {
   try {
-    const { category, description } = req.body;
+    const { category, description, prefix } = req.body;
     const imageFile = req.file;
 
     if (!category || !description) {
@@ -72,7 +72,7 @@ exports.createCategory = async (req, res) => {
     // Insert DB
     const { data, error } = await supabase
       .from('building_material_category')
-      .insert([{ category, description, image: publicUrl }])
+      .insert([{ category, description, prefix, image: publicUrl }])
       .select();
 
     if (error) throw error;
@@ -87,12 +87,13 @@ exports.createCategory = async (req, res) => {
 exports.updateCategory = async (req, res) => {
   try {
     const { id } = req.params;
-    const { category, description } = req.body;
+    const { category, description, prefix } = req.body;
     const imageFile = req.file;
 
     const updates = {};
     if (category) updates.category = category;
     if (description) updates.description = description;
+    if (prefix) updates.prefix = prefix;
 
     if (imageFile) {
       const fileExt = imageFile.originalname.split('.').pop();
