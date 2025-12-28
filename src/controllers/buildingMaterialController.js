@@ -4,7 +4,7 @@ const BUCKET_NAME = 'building-materials';
 
 exports.uploadBuildingMaterial = async (req, res) => {
   try {
-    const { code, category, series, description, specs } = req.body;
+    const { code, name, category, series, description, specs } = req.body;
     const imageFile = req.file;
 
     if (!imageFile) {
@@ -35,16 +35,20 @@ exports.uploadBuildingMaterial = async (req, res) => {
       .getPublicUrl(filePath);
 
     // 2. Insert into Database
+    const cleanSeries = (series === 'null' || series === 'undefined' || series === '') ? null : series;
+    const cleanSpecs = (specs && specs !== 'null' && specs !== 'undefined' && specs !== '') ? JSON.parse(specs) : null;
+
     const { data, error } = await supabase
       .from('building_material')
       .insert([
         {
           code,
+          name,
           category,
-          series,
+          series: cleanSeries,
           image: publicUrl,
           description,
-          specs: specs ? JSON.parse(specs) : null,
+          specs: cleanSpecs,
         },
       ])
       .select();
@@ -71,7 +75,7 @@ exports.uploadBuildingMaterial = async (req, res) => {
 exports.updateBuildingMaterial = async (req, res) => {
   try {
     const { code } = req.params;
-    const { category, series, description, specs } = req.body;
+    const { name, category, series, description, specs } = req.body;
     const imageFile = req.file;
 
     let imageUrl;
@@ -101,19 +105,23 @@ exports.updateBuildingMaterial = async (req, res) => {
     }
 
     // 2. Update Database
-    const updateData = {
-      category,
-      series,
-      description,
-      specs: specs ? JSON.parse(specs) : undefined,
-    };
+    const updateData = {};
+    
+    if (name !== undefined) updateData.name = name;
+    if (category !== undefined) updateData.category = category;
+    if (description !== undefined) updateData.description = description;
+    
+    if (series !== undefined) {
+        updateData.series = (series === 'null' || series === 'undefined' || series === '') ? null : series;
+    }
+    
+    if (specs !== undefined) {
+         updateData.specs = (specs === 'null' || specs === 'undefined' || specs === '') ? null : JSON.parse(specs);
+    }
 
     if (imageUrl) {
       updateData.image = imageUrl;
     }
-
-    // Remove undefined keys
-    Object.keys(updateData).forEach(key => updateData[key] === undefined && delete updateData[key]);
 
     const { data, error } = await supabase
       .from('building_material')
