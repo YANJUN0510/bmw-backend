@@ -37,7 +37,7 @@ exports.uploadBuildingMaterial = async (req, res) => {
     // 2. Insert into Database
     const cleanSeries = (series === 'null' || series === 'undefined' || series === '') ? null : series;
     const cleanSpecs = (specs && specs !== 'null' && specs !== 'undefined' && specs !== '') ? JSON.parse(specs) : null;
-    const cleanPrice = (price === 'null' || price === 'undefined' || price === '') ? null : parseInt(price, 10);
+    const cleanPrice = (price === 'null' || price === 'undefined' || price === '') ? null : String(price);
 
     const { data, error } = await supabase
       .from('building_material')
@@ -50,7 +50,7 @@ exports.uploadBuildingMaterial = async (req, res) => {
           image: publicUrl,
           description,
           specs: cleanSpecs,
-          price: Number.isNaN(cleanPrice) ? null : cleanPrice,
+          price: cleanPrice,
         },
       ])
       .select();
@@ -122,8 +122,7 @@ exports.updateBuildingMaterial = async (req, res) => {
     }
 
     if (price !== undefined) {
-      const parsedPrice = (price === 'null' || price === 'undefined' || price === '') ? null : parseInt(price, 10);
-      updateData.price = Number.isNaN(parsedPrice) ? null : parsedPrice;
+      updateData.price = (price === 'null' || price === 'undefined' || price === '') ? null : String(price);
     }
 
     if (imageUrl) {
