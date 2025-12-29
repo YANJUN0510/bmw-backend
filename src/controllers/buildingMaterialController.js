@@ -4,37 +4,53 @@ const BUCKET_NAME = 'building-materials';
 
 exports.uploadBuildingMaterial = async (req, res) => {
   try {
+    console.log('📦 Received request body:', req.body);
+    console.log('🖼️ Received files:', req.files ? req.files.length : 0);
+    
     const { code, name, category, series, description, specs, price } = req.body;
-    const imageFile = req.file;
+    const imageFiles = req.files; // Now receives array of files
 
-    if (!imageFile) {
-      return res.status(400).json({ status: 'error', message: 'Image file is required' });
+    if (!imageFiles || imageFiles.length === 0) {
+      console.log('❌ No image files received');
+      return res.status(400).json({ status: 'error', message: 'At least one image file is required' });
+    }
+    
+    console.log('✅ Processing', imageFiles.length, 'image(s)');
+
+    // Upload all images and collect URLs
+    const uploadedUrls = [];
+    
+    for (let i = 0; i < imageFiles.length; i++) {
+      const file = imageFiles[i];
+      const fileExt = file.originalname.split('.').pop();
+      const fileName = `${code}_${i + 1}.${fileExt}`;
+      const filePath = `${fileName}`;
+
+      const { error: storageError } = await supabase
+        .storage
+        .from(BUCKET_NAME)
+        .upload(filePath, file.buffer, {
+          contentType: file.mimetype,
+          upsert: true
+        });
+
+      if (storageError) {
+        throw storageError;
+      }
+
+      const { data: { publicUrl } } = supabase
+        .storage
+        .from(BUCKET_NAME)
+        .getPublicUrl(filePath);
+
+      uploadedUrls.push(publicUrl);
     }
 
-    // 1. Upload image
-    const fileExt = imageFile.originalname.split('.').pop();
-    const fileName = `${code}.${fileExt}`;
-    const filePath = `${fileName}`;
+    // First image is the main image, all images go to gallery
+    const mainImage = uploadedUrls[0];
+    const gallery = uploadedUrls;
 
-    const { error: storageError } = await supabase
-      .storage
-      .from(BUCKET_NAME)
-      .upload(filePath, imageFile.buffer, {
-        contentType: imageFile.mimetype,
-        upsert: true
-      });
-
-    if (storageError) {
-      throw storageError;
-    }
-
-    // Get Public URL
-    const { data: { publicUrl } } = supabase
-      .storage
-      .from(BUCKET_NAME)
-      .getPublicUrl(filePath);
-
-    // 2. Insert into Database
+    // Insert into Database
     const cleanSeries = (series === 'null' || series === 'undefined' || series === '') ? null : series;
     const cleanSpecs = (specs && specs !== 'null' && specs !== 'undefined' && specs !== '') ? JSON.parse(specs) : null;
     const cleanPrice = (price === 'null' || price === 'undefined' || price === '') ? null : String(price);
@@ -47,7 +63,8 @@ exports.uploadBuildingMaterial = async (req, res) => {
           name,
           category,
           series: cleanSeries,
-          image: publicUrl,
+          image: mainImage,
+          gallery: gallery,
           description,
           specs: cleanSpecs,
           price: cleanPrice,
@@ -78,35 +95,8 @@ exports.updateBuildingMaterial = async (req, res) => {
   try {
     const { code } = req.params;
     const { name, category, series, description, specs, price } = req.body;
-    const imageFile = req.file;
+    const imageFiles = req.files;
 
-    let imageUrl;
-
-    // 1. Upload new image if provided
-    if (imageFile) {
-      const fileExt = imageFile.originalname.split('.').pop();
-      const fileName = `${code}.${fileExt}`;
-      const filePath = `${fileName}`;
-
-      const { error: storageError } = await supabase
-        .storage
-        .from(BUCKET_NAME)
-        .upload(filePath, imageFile.buffer, {
-          contentType: imageFile.mimetype,
-          upsert: true
-        });
-
-      if (storageError) throw storageError;
-
-      const { data: { publicUrl } } = supabase
-        .storage
-        .from(BUCKET_NAME)
-        .getPublicUrl(filePath);
-      
-      imageUrl = publicUrl;
-    }
-
-    // 2. Update Database
     const updateData = {};
     
     if (name !== undefined) updateData.name = name;
@@ -114,19 +104,47 @@ exports.updateBuildingMaterial = async (req, res) => {
     if (description !== undefined) updateData.description = description;
     
     if (series !== undefined) {
-        updateData.series = (series === 'null' || series === 'undefined' || series === '') ? null : series;
+      updateData.series = (series === 'null' || series === 'undefined' || series === '') ? null : series;
     }
     
     if (specs !== undefined) {
-         updateData.specs = (specs === 'null' || specs === 'undefined' || specs === '') ? null : JSON.parse(specs);
+      updateData.specs = (specs === 'null' || specs === 'undefined' || specs === '') ? null : JSON.parse(specs);
     }
 
     if (price !== undefined) {
       updateData.price = (price === 'null' || price === 'undefined' || price === '') ? null : String(price);
     }
 
-    if (imageUrl) {
-      updateData.image = imageUrl;
+    // Upload new images if provided
+    if (imageFiles && imageFiles.length > 0) {
+      const uploadedUrls = [];
+      
+      for (let i = 0; i < imageFiles.length; i++) {
+        const file = imageFiles[i];
+        const fileExt = file.originalname.split('.').pop();
+        const fileName = `${code}_${i + 1}.${fileExt}`;
+        const filePath = `${fileName}`;
+
+        const { error: storageError } = await supabase
+          .storage
+          .from(BUCKET_NAME)
+          .upload(filePath, file.buffer, {
+            contentType: file.mimetype,
+            upsert: true
+          });
+
+        if (storageError) throw storageError;
+
+        const { data: { publicUrl } } = supabase
+          .storage
+          .from(BUCKET_NAME)
+          .getPublicUrl(filePath);
+        
+        uploadedUrls.push(publicUrl);
+      }
+
+      updateData.image = uploadedUrls[0];
+      updateData.gallery = uploadedUrls;
     }
 
     const { data, error } = await supabase
@@ -160,11 +178,6 @@ exports.deleteBuildingMaterial = async (req, res) => {
   try {
     const { code } = req.params;
 
-    // 1. Get the image path to delete from storage (optional, but good practice)
-    // For simplicity, we might skip deleting from storage if we don't know the exact extension, 
-    // or we can try to list files with the prefix `code.`
-    
-    // 2. Delete from Database
     const { data, error } = await supabase
       .from('building_material')
       .delete()
@@ -246,21 +259,21 @@ exports.getBuildingMaterialByCode = async (req, res) => {
 
 exports.getAllCategoriesAndSeries = async (req, res) => {
   try {
-    // 1. Fetch categories with prefixes from the category table
+    // Fetch categories with prefixes from the category table
     const { data: categoryData, error: categoryError } = await supabase
       .from('building_material_category')
       .select('category, prefix');
 
     if (categoryError) throw categoryError;
 
-    // 2. Fetch existing materials to get series
+    // Fetch existing materials to get series
     const { data: materialData, error: materialError } = await supabase
       .from('building_material')
       .select('category, series');
 
     if (materialError) throw materialError;
 
-    // 3. Process series
+    // Process series
     const seriesMap = {};
     materialData.forEach(item => {
       if (!seriesMap[item.category]) {
@@ -271,21 +284,20 @@ exports.getAllCategoriesAndSeries = async (req, res) => {
       }
     });
 
-    // 4. Merge data
-    // Start with defined categories
+    // Merge data
     const result = categoryData.map(cat => ({
       category: cat.category,
       prefix: cat.prefix,
       series: seriesMap[cat.category] ? Array.from(seriesMap[cat.category]) : []
     }));
 
-    // Add any categories found in materials but not in category table (legacy/orphan safety)
+    // Add any categories found in materials but not in category table
     const definedCategories = new Set(categoryData.map(c => c.category));
     Object.keys(seriesMap).forEach(catName => {
       if (!definedCategories.has(catName)) {
         result.push({
           category: catName,
-          prefix: null, // No prefix defined
+          prefix: null,
           series: Array.from(seriesMap[catName])
         });
       }
@@ -303,3 +315,4 @@ exports.getAllCategoriesAndSeries = async (req, res) => {
     });
   }
 };
+

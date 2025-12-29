@@ -11,8 +11,9 @@ const upload = multer({ storage: storage });
 router.get('/', buildingMaterialController.getAllBuildingMaterials);
 router.get('/categories', buildingMaterialController.getAllCategoriesAndSeries);
 router.get('/:code', buildingMaterialController.getBuildingMaterialByCode);
-router.post('/', upload.single('image'), buildingMaterialController.uploadBuildingMaterial);
-router.put('/:code', upload.single('image'), buildingMaterialController.updateBuildingMaterial);
+// Support up to 3 images upload
+router.post('/', upload.array('images', 3), buildingMaterialController.uploadBuildingMaterial);
+router.put('/:code', upload.array('images', 3), buildingMaterialController.updateBuildingMaterial);
 router.delete('/:code', buildingMaterialController.deleteBuildingMaterial);
 
 module.exports = router;
