@@ -27,6 +27,8 @@ exports.uploadBuildingMaterial = async (req, res) => {
     const fileName = `${code}.${fileExt}`;
     const filePath = `${fileName}`;
 
+    console.log(`Uploading main image: ${fileName}, size: ${imageFile.buffer.length} bytes`);
+
     const { error: storageError } = await supabase
       .storage
       .from(BUCKET_NAME)
@@ -36,7 +38,8 @@ exports.uploadBuildingMaterial = async (req, res) => {
       });
 
     if (storageError) {
-      throw storageError;
+      console.error('Main image upload error:', storageError);
+      throw new Error(`Main image upload failed: ${storageError.message}`);
     }
 
     // Get Public URL for main image
@@ -44,6 +47,8 @@ exports.uploadBuildingMaterial = async (req, res) => {
       .storage
       .from(BUCKET_NAME)
       .getPublicUrl(filePath);
+    
+    console.log(`Main image uploaded successfully: ${mainImageUrl}`);
 
     // 2. Upload gallery images (最多4张)
     const galleryUrls = [];
@@ -52,37 +57,51 @@ exports.uploadBuildingMaterial = async (req, res) => {
     console.log(`Uploading ${maxGalleryImages} gallery images...`);
     
     for (let i = 0; i < maxGalleryImages; i++) {
-      const file = galleryFiles[i];
-      const galleryFileExt = file.originalname.split('.').pop();
-      const galleryFileName = `${code}_gallery_${i + 1}.${galleryFileExt}`;
-      
-      console.log(`Uploading gallery image ${i + 1}: ${galleryFileName}`);
-      
-      const { error: galleryError } = await supabase
-        .storage
-        .from(BUCKET_NAME)
-        .upload(galleryFileName, file.buffer, {
-          contentType: file.mimetype,
-          upsert: true
-        });
+      try {
+        const file = galleryFiles[i];
+        const galleryFileExt = file.originalname.split('.').pop();
+        const galleryFileName = `${code}_gallery_${i + 1}.${galleryFileExt}`;
+        
+        console.log(`Uploading gallery image ${i + 1}/${maxGalleryImages}: ${galleryFileName}, size: ${file.buffer.length} bytes`);
+        
+        const { data: uploadData, error: galleryError } = await supabase
+          .storage
+          .from(BUCKET_NAME)
+          .upload(galleryFileName, file.buffer, {
+            contentType: file.mimetype,
+            upsert: true
+          });
 
-      if (galleryError) {
-        console.error(`Error uploading gallery image ${i + 1}:`, galleryError);
-        throw galleryError;
+        if (galleryError) {
+          console.error(`Gallery image ${i + 1} upload error:`, {
+            message: galleryError.message,
+            statusCode: galleryError.statusCode,
+            error: galleryError.error,
+            fileName: galleryFileName
+          });
+          throw new Error(`Gallery image ${i + 1} upload failed: ${galleryError.message}`);
+        }
+
+        console.log(`Gallery image ${i + 1} upload response:`, uploadData);
+
+        const { data: { publicUrl } } = supabase
+          .storage
+          .from(BUCKET_NAME)
+          .getPublicUrl(galleryFileName);
+        
+        console.log(`Gallery image ${i + 1} uploaded successfully: ${publicUrl}`);
+        galleryUrls.push(publicUrl);
+      } catch (error) {
+        console.error(`Fatal error during gallery image ${i + 1} upload:`, error);
+        throw error;
       }
-
-      const { data: { publicUrl } } = supabase
-        .storage
-        .from(BUCKET_NAME)
-        .getPublicUrl(galleryFileName);
-      
-      console.log(`Gallery image ${i + 1} uploaded successfully: ${publicUrl}`);
-      galleryUrls.push(publicUrl);
     }
     
     console.log('All gallery images uploaded:', galleryUrls);
 
     // 3. Insert into Database
+    // Note: gallery字段如果是text[]类型，直接传数组；如果是jsonb类型，需要JSON.stringify
+    // 当前假设是text[]类型
     const insertData = {
       code,
       name,
@@ -96,8 +115,13 @@ exports.uploadBuildingMaterial = async (req, res) => {
     };
 
     console.log('Inserting into database:', {
-      ...insertData,
-      gallery: galleryUrls.length > 0 ? `${galleryUrls.length} images` : null
+      code,
+      name,
+      category,
+      image: mainImageUrl ? 'uploaded' : 'missing',
+      gallery: galleryUrls.length > 0 ? galleryUrls : null,
+      galleryType: typeof insertData.gallery,
+      galleryIsArray: Array.isArray(insertData.gallery)
     });
 
     const { data, error } = await supabase
@@ -120,9 +144,12 @@ exports.uploadBuildingMaterial = async (req, res) => {
 
   } catch (error) {
     console.error('Error uploading building material:', error);
+    console.error('Full error details:', JSON.stringify(error, null, 2));
     res.status(500).json({
       status: 'error',
       message: error.message,
+      details: error.details || error.hint || error.code || 'No additional details',
+      errorObject: error
     });
   }
 };
