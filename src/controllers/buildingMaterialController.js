@@ -4,77 +4,113 @@ const BUCKET_NAME = 'building-materials';
 
 exports.uploadBuildingMaterial = async (req, res) => {
   try {
-    console.log('📦 Received request body:', req.body);
-    console.log('🖼️ Received files:', req.files ? req.files.length : 0);
-    
     const { code, name, category, series, description, specs, price } = req.body;
-    const imageFiles = req.files; // Now receives array of files
+    
+    // Handle multiple files
+    const files = req.files || {};
+    const imageFile = files['image'] ? files['image'][0] : null;
+    const galleryFiles = files['gallery'] || [];
 
-    if (!imageFiles || imageFiles.length === 0) {
-      console.log('❌ No image files received');
-      return res.status(400).json({ status: 'error', message: 'At least one image file is required' });
+    console.log('Received files:', {
+      hasImage: !!imageFile,
+      galleryCount: galleryFiles.length,
+      imageFileName: imageFile?.originalname,
+      galleryFileNames: galleryFiles.map(f => f.originalname)
+    });
+
+    if (!imageFile) {
+      return res.status(400).json({ status: 'error', message: 'Main image file is required' });
     }
-    
-    console.log('✅ Processing', imageFiles.length, 'image(s)');
 
-    // Upload all images and collect URLs
-    const uploadedUrls = [];
-    
-    for (let i = 0; i < imageFiles.length; i++) {
-      const file = imageFiles[i];
-      const fileExt = file.originalname.split('.').pop();
-      const fileName = `${code}_${i + 1}.${fileExt}`;
-      const filePath = `${fileName}`;
+    // 1. Upload main image
+    const fileExt = imageFile.originalname.split('.').pop();
+    const fileName = `${code}.${fileExt}`;
+    const filePath = `${fileName}`;
 
-      const { error: storageError } = await supabase
+    const { error: storageError } = await supabase
+      .storage
+      .from(BUCKET_NAME)
+      .upload(filePath, imageFile.buffer, {
+        contentType: imageFile.mimetype,
+        upsert: true
+      });
+
+    if (storageError) {
+      throw storageError;
+    }
+
+    // Get Public URL for main image
+    const { data: { publicUrl: mainImageUrl } } = supabase
+      .storage
+      .from(BUCKET_NAME)
+      .getPublicUrl(filePath);
+
+    // 2. Upload gallery images (最多4张)
+    const galleryUrls = [];
+    const maxGalleryImages = Math.min(galleryFiles.length, 4);
+    
+    console.log(`Uploading ${maxGalleryImages} gallery images...`);
+    
+    for (let i = 0; i < maxGalleryImages; i++) {
+      const file = galleryFiles[i];
+      const galleryFileExt = file.originalname.split('.').pop();
+      const galleryFileName = `${code}_gallery_${i + 1}.${galleryFileExt}`;
+      
+      console.log(`Uploading gallery image ${i + 1}: ${galleryFileName}`);
+      
+      const { error: galleryError } = await supabase
         .storage
         .from(BUCKET_NAME)
-        .upload(filePath, file.buffer, {
+        .upload(galleryFileName, file.buffer, {
           contentType: file.mimetype,
           upsert: true
         });
 
-      if (storageError) {
-        throw storageError;
+      if (galleryError) {
+        console.error(`Error uploading gallery image ${i + 1}:`, galleryError);
+        throw galleryError;
       }
 
       const { data: { publicUrl } } = supabase
         .storage
         .from(BUCKET_NAME)
-        .getPublicUrl(filePath);
-
-      uploadedUrls.push(publicUrl);
+        .getPublicUrl(galleryFileName);
+      
+      console.log(`Gallery image ${i + 1} uploaded successfully: ${publicUrl}`);
+      galleryUrls.push(publicUrl);
     }
+    
+    console.log('All gallery images uploaded:', galleryUrls);
 
-    // First image is the main image, all images go to gallery
-    const mainImage = uploadedUrls[0];
-    const gallery = uploadedUrls;
+    // 3. Insert into Database
+    const insertData = {
+      code,
+      name,
+      category,
+      series: series || null,
+      image: mainImageUrl,
+      gallery: galleryUrls.length > 0 ? galleryUrls : null,
+      description,
+      specs: specs ? JSON.parse(specs) : null,
+      price: price || null,
+    };
 
-    // Insert into Database
-    const cleanSeries = (series === 'null' || series === 'undefined' || series === '') ? null : series;
-    const cleanSpecs = (specs && specs !== 'null' && specs !== 'undefined' && specs !== '') ? JSON.parse(specs) : null;
-    const cleanPrice = (price === 'null' || price === 'undefined' || price === '') ? null : String(price);
+    console.log('Inserting into database:', {
+      ...insertData,
+      gallery: galleryUrls.length > 0 ? `${galleryUrls.length} images` : null
+    });
 
     const { data, error } = await supabase
       .from('building_material')
-      .insert([
-        {
-          code,
-          name,
-          category,
-          series: cleanSeries,
-          image: mainImage,
-          gallery: gallery,
-          description,
-          specs: cleanSpecs,
-          price: cleanPrice,
-        },
-      ])
+      .insert([insertData])
       .select();
 
     if (error) {
+      console.error('Database insertion error:', error);
       throw error;
     }
+
+    console.log('Material uploaded successfully:', data[0].code);
 
     res.status(201).json({
       status: 'success',
@@ -95,56 +131,77 @@ exports.updateBuildingMaterial = async (req, res) => {
   try {
     const { code } = req.params;
     const { name, category, series, description, specs, price } = req.body;
-    const imageFiles = req.files;
-
-    const updateData = {};
     
-    if (name !== undefined) updateData.name = name;
-    if (category !== undefined) updateData.category = category;
-    if (description !== undefined) updateData.description = description;
-    
-    if (series !== undefined) {
-      updateData.series = (series === 'null' || series === 'undefined' || series === '') ? null : series;
-    }
-    
-    if (specs !== undefined) {
-      updateData.specs = (specs === 'null' || specs === 'undefined' || specs === '') ? null : JSON.parse(specs);
-    }
+    // Handle multiple files
+    const files = req.files || {};
+    const imageFile = files['image'] ? files['image'][0] : null;
+    const galleryFiles = files['gallery'] || [];
 
-    if (price !== undefined) {
-      updateData.price = (price === 'null' || price === 'undefined' || price === '') ? null : String(price);
-    }
+    let updateData = {
+      name,
+      category,
+      series: series || null,
+      description,
+      specs: specs ? JSON.parse(specs) : undefined,
+      price: price || null,
+    };
 
-    // Upload new images if provided
-    if (imageFiles && imageFiles.length > 0) {
-      const uploadedUrls = [];
+    // Remove undefined keys
+    Object.keys(updateData).forEach(key => updateData[key] === undefined && delete updateData[key]);
+
+    // Handle Main Image
+    if (imageFile) {
+      const fileExt = imageFile.originalname.split('.').pop();
+      const fileName = `${code}.${fileExt}`;
+      const filePath = `${fileName}`;
+
+      const { error: storageError } = await supabase
+        .storage
+        .from(BUCKET_NAME)
+        .upload(filePath, imageFile.buffer, {
+          contentType: imageFile.mimetype,
+          upsert: true
+        });
+
+      if (storageError) {
+        throw storageError;
+      }
+
+      const { data: { publicUrl } } = supabase
+        .storage
+        .from(BUCKET_NAME)
+        .getPublicUrl(filePath);
       
-      for (let i = 0; i < imageFiles.length; i++) {
-        const file = imageFiles[i];
-        const fileExt = file.originalname.split('.').pop();
-        const fileName = `${code}_${i + 1}.${fileExt}`;
-        const filePath = `${fileName}`;
+      updateData.image = publicUrl;
+    }
 
-        const { error: storageError } = await supabase
+    // Handle Gallery Images
+    if (galleryFiles.length > 0) {
+      const galleryUrls = [];
+      const maxGalleryImages = Math.min(galleryFiles.length, 4);
+      for (let i = 0; i < maxGalleryImages; i++) {
+        const file = galleryFiles[i];
+        const galleryFileExt = file.originalname.split('.').pop();
+        const galleryFileName = `${code}_gallery_${i + 1}.${galleryFileExt}`;
+        
+        const { error: galleryError } = await supabase
           .storage
           .from(BUCKET_NAME)
-          .upload(filePath, file.buffer, {
+          .upload(galleryFileName, file.buffer, {
             contentType: file.mimetype,
             upsert: true
           });
 
-        if (storageError) throw storageError;
+        if (galleryError) throw galleryError;
 
         const { data: { publicUrl } } = supabase
           .storage
           .from(BUCKET_NAME)
-          .getPublicUrl(filePath);
+          .getPublicUrl(galleryFileName);
         
-        uploadedUrls.push(publicUrl);
+        galleryUrls.push(publicUrl);
       }
-
-      updateData.image = uploadedUrls[0];
-      updateData.gallery = uploadedUrls;
+      updateData.gallery = galleryUrls;
     }
 
     const { data, error } = await supabase
@@ -153,13 +210,15 @@ exports.updateBuildingMaterial = async (req, res) => {
       .eq('code', code)
       .select();
 
-    if (error) throw error;
+    if (error) {
+      throw error;
+    }
 
     if (data.length === 0) {
       return res.status(404).json({ status: 'error', message: 'Building material not found' });
     }
 
-    res.status(200).json({
+    res.json({
       status: 'success',
       message: 'Building material updated successfully',
       data: data[0],
@@ -178,19 +237,63 @@ exports.deleteBuildingMaterial = async (req, res) => {
   try {
     const { code } = req.params;
 
-    const { data, error } = await supabase
+    // 1. Get building material to find image paths
+    const { data: material, error: fetchError } = await supabase
       .from('building_material')
-      .delete()
+      .select('image, gallery')
       .eq('code', code)
-      .select();
+      .single();
 
-    if (error) throw error;
-
-    if (data.length === 0) {
-      return res.status(404).json({ status: 'error', message: 'Building material not found' });
+    if (fetchError) {
+      if (fetchError.code === 'PGRST116') {
+        return res.status(404).json({ status: 'error', message: 'Building material not found' });
+      }
+      throw fetchError;
     }
 
-    res.status(200).json({
+    // 2. Delete from Database
+    const { error: deleteError } = await supabase
+      .from('building_material')
+      .delete()
+      .eq('code', code);
+
+    if (deleteError) {
+      throw deleteError;
+    }
+
+    // 3. Delete main image from Storage
+    if (material && material.image) {
+      const urlParts = material.image.split('/');
+      const fileName = urlParts[urlParts.length - 1];
+      
+      const { error: storageError } = await supabase
+        .storage
+        .from(BUCKET_NAME)
+        .remove([fileName]);
+        
+      if (storageError) {
+        console.warn('Failed to delete main image from storage:', storageError);
+      }
+    }
+
+    // 4. Delete gallery images from Storage
+    if (material && material.gallery && Array.isArray(material.gallery)) {
+      const galleryFileNames = material.gallery.map(url => {
+        const urlParts = url.split('/');
+        return urlParts[urlParts.length - 1];
+      });
+      
+      const { error: galleryStorageError } = await supabase
+        .storage
+        .from(BUCKET_NAME)
+        .remove(galleryFileNames);
+        
+      if (galleryStorageError) {
+        console.warn('Failed to delete gallery images from storage:', galleryStorageError);
+      }
+    }
+
+    res.json({
       status: 'success',
       message: 'Building material deleted successfully',
     });
@@ -206,23 +309,19 @@ exports.deleteBuildingMaterial = async (req, res) => {
 
 exports.getAllBuildingMaterials = async (req, res) => {
   try {
-    const { category, series } = req.query;
-    let query = supabase.from('building_material').select('*');
+    const { data, error } = await supabase
+      .from('building_material')
+      .select('*')
+      .order('created_at', { ascending: false });
 
-    if (category) {
-      query = query.eq('category', category);
+    if (error) {
+      throw error;
     }
-    if (series) {
-      query = query.eq('series', series);
-    }
 
-    const { data, error } = await query;
-
-    if (error) throw error;
-
-    res.status(200).json({
+    res.json({
       status: 'success',
-      data,
+      results: data.length,
+      data: data,
     });
   } catch (error) {
     console.error('Error fetching building materials:', error);
@@ -242,11 +341,16 @@ exports.getBuildingMaterialByCode = async (req, res) => {
       .eq('code', code)
       .single();
 
-    if (error) throw error;
+    if (error) {
+      if (error.code === 'PGRST116') {
+        return res.status(404).json({ status: 'error', message: 'Building material not found' });
+      }
+      throw error;
+    }
 
-    res.status(200).json({
+    res.json({
       status: 'success',
-      data,
+      data: data,
     });
   } catch (error) {
     console.error('Error fetching building material:', error);
@@ -259,56 +363,27 @@ exports.getBuildingMaterialByCode = async (req, res) => {
 
 exports.getAllCategoriesAndSeries = async (req, res) => {
   try {
-    // Fetch categories with prefixes from the category table
-    const { data: categoryData, error: categoryError } = await supabase
-      .from('building_material_category')
-      .select('category, prefix');
-
-    if (categoryError) throw categoryError;
-
-    // Fetch existing materials to get series
-    const { data: materialData, error: materialError } = await supabase
+    const { data, error } = await supabase
       .from('building_material')
       .select('category, series');
 
-    if (materialError) throw materialError;
+    if (error) {
+      throw error;
+    }
 
-    // Process series
-    const seriesMap = {};
-    materialData.forEach(item => {
-      if (!seriesMap[item.category]) {
-        seriesMap[item.category] = new Set();
-      }
-      if (item.series) {
-        seriesMap[item.category].add(item.series);
-      }
-    });
+    // Extract unique categories and series
+    const categories = [...new Set(data.map(item => item.category))];
+    const series = [...new Set(data.map(item => item.series).filter(Boolean))];
 
-    // Merge data
-    const result = categoryData.map(cat => ({
-      category: cat.category,
-      prefix: cat.prefix,
-      series: seriesMap[cat.category] ? Array.from(seriesMap[cat.category]) : []
-    }));
-
-    // Add any categories found in materials but not in category table
-    const definedCategories = new Set(categoryData.map(c => c.category));
-    Object.keys(seriesMap).forEach(catName => {
-      if (!definedCategories.has(catName)) {
-        result.push({
-          category: catName,
-          prefix: null,
-          series: Array.from(seriesMap[catName])
-        });
-      }
-    });
-
-    res.status(200).json({
+    res.json({
       status: 'success',
-      data: result,
+      data: {
+        categories,
+        series
+      },
     });
   } catch (error) {
-    console.error('Error fetching categories:', error);
+    console.error('Error fetching categories and series:', error);
     res.status(500).json({
       status: 'error',
       message: error.message,
