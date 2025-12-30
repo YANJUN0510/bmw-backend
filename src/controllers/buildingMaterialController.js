@@ -1,4 +1,4 @@
-const supabase = require('../config/supabase');
+const supabase = require('../config/bmw_supabase');
 
 const BUCKET_NAME = 'building-materials';
 
