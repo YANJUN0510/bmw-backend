@@ -8,8 +8,10 @@ const buildingMaterialSeriesRoutes = require('./buildingMaterialSeriesRoutes');
 const journalRoutes = require('./journalRoutes');
 const chatRoutes = require('./chatRoutes');
 const messageRoutes = require('./messageRoutes');
+const authRoutes = require('./authRoutes');
 
 router.get('/', homeController.getHome);
+router.use('/auth', authRoutes);
 router.use('/products', productRoutes);
 router.use('/building-materials', buildingMaterialRoutes);
 router.use('/building-material-categories', buildingMaterialCategoryRoutes);
