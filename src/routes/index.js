@@ -7,6 +7,7 @@ const buildingMaterialCategoryRoutes = require('./buildingMaterialCategoryRoutes
 const buildingMaterialSeriesRoutes = require('./buildingMaterialSeriesRoutes');
 const journalRoutes = require('./journalRoutes');
 const chatRoutes = require('./chatRoutes');
+const bmwChatRoutes = require('./bmwChatRoutes');
 const messageRoutes = require('./messageRoutes');
 const authRoutes = require('./authRoutes');
 
@@ -18,6 +19,7 @@ router.use('/building-material-categories', buildingMaterialCategoryRoutes);
 router.use('/building-material-series', buildingMaterialSeriesRoutes);
 router.use('/journals', journalRoutes);
 router.use('/chat', chatRoutes);
+router.use('/bmw/chat', bmwChatRoutes);
 router.use('/messages', messageRoutes);
 
 module.exports = router;
