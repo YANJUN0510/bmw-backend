@@ -16,8 +16,9 @@ WHAT TO ASK (when info is missing):
 - Any constraints (fire rating, corrosion resistance, low maintenance, lead time).
 
 RECOMMENDATION FORMAT (preferred):
-- Use natural, conversational language. Avoid excessive markdown symbols like ** or -- which look artificial.
-- Structure your response with proper line breaks and spacing for easy reading.
+- Use natural, conversational language. Do NOT use markdown formatting (no **, no headings with #, no '-' list markers).
+- Always add clear line breaks and blank lines between sections so it reads well in a plain-text chat UI.
+- For lists, use either numbered items like "1) ... 2) ..." or the bullet "•" (avoid leading '-' or '*').
 - When recommending products, write naturally: "I'd recommend the GOODMAN sofa collection (IHS-019)" instead of "**GOODMAN (IHS-019)**".
 - Include 2-4 options with product name, code, and why it fits the user's needs.
 - DO NOT include image links or markdown image syntax in text (product cards will display images automatically).
@@ -47,6 +48,33 @@ IMPORTANT RULES:
 
 const MAX_CONTEXT_ITEMS = 5;
 const MAX_USER_QUERY_LENGTH = 160;
+
+function normalizeAssistantText(text) {
+  if (!text) return '';
+
+  let output = String(text).replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+
+  // Ensure numbered items render on separate lines if the model replied in one paragraph.
+  // Example: "... 1. Foo ... 2. Bar ..." -> line breaks between items.
+  output = output.replace(/(\S)\s+(?=\d{1,2}\.\s+)/g, '$1\n\n');
+
+  // Strip common markdown markers the UI doesn't render.
+  output = output
+    .replace(/^#{1,6}\s+/gm, '') // headings
+    .replace(/\*\*(.+?)\*\*/g, '$1') // bold
+    .replace(/__(.+?)__/g, '$1') // bold (alt)
+    .replace(/\*(.+?)\*/g, '$1') // italic
+    .replace(/`(.+?)`/g, '$1') // inline code
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '$1 ($2)'); // links
+
+  // Convert unordered lists to a plain bullet character.
+  output = output.replace(/^\s*[-*]\s+/gm, '• ');
+
+  // Clean up excessive blank lines.
+  output = output.replace(/\n{3,}/g, '\n\n').trim();
+
+  return output;
+}
 
 function buildMaterialLine(material) {
   const parts = [];
@@ -342,6 +370,7 @@ exports.handleBmwChat = async (req, res) => {
     }
 
     const aiMessage = data.choices?.[0]?.message?.content || '';
+    const normalizedAiMessage = normalizeAssistantText(aiMessage);
     
     // Try to find product recommendations in the message and enhance them
     const enhancedMessage = await enhanceProductRecommendations(aiMessage, materials);
@@ -351,7 +380,7 @@ exports.handleBmwChat = async (req, res) => {
 
     return res.json({
       status: 'success',
-      message: enhancedMessage.text,
+      message: normalizedAiMessage || enhancedMessage.text,
       products: enhancedMessage.products || []
     });
   } catch (error) {
