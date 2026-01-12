@@ -10,6 +10,7 @@ const chatRoutes = require('./chatRoutes');
 const bmwChatRoutes = require('./bmwChatRoutes');
 const messageRoutes = require('./messageRoutes');
 const authRoutes = require('./authRoutes');
+const fileUploadRoutes = require('./fileUploadRoutes');
 
 router.get('/', homeController.getHome);
 router.use('/auth', authRoutes);
@@ -20,6 +21,7 @@ router.use('/building-material-series', buildingMaterialSeriesRoutes);
 router.use('/journals', journalRoutes);
 router.use('/chat', chatRoutes);
 router.use('/bmw/chat', bmwChatRoutes);
+router.use('/bmw/upload', fileUploadRoutes);
 router.use('/messages', messageRoutes);
 
 module.exports = router;
