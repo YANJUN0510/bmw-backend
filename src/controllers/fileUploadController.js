@@ -5,6 +5,8 @@ const sharp = require('sharp');
 const pdf2pic = require('pdf2pic');
 const mammoth = require('mammoth');
 
+const AUTO_DELETE_UPLOADS = process.env.AUTO_DELETE_UPLOADS !== 'false';
+
 // Configure multer for file upload
 const storage = multer.diskStorage({
   destination: async (req, file, cb) => {
@@ -86,10 +88,26 @@ const extractFileContent = async (filePath, mimeType) => {
   }
 };
 
+const buildImagePreviewDataUrl = async (filePath, mimeType) => {
+  if (!mimeType || !mimeType.startsWith('image/')) return null;
+  try {
+    const buffer = await sharp(filePath)
+      .rotate()
+      .resize(160, 160, { fit: 'cover' })
+      .jpeg({ quality: 70 })
+      .toBuffer();
+    return `data:image/jpeg;base64,${buffer.toString('base64')}`;
+  } catch (error) {
+    console.warn('Failed to build image preview:', error.message || error);
+    return null;
+  }
+};
+
 // Handle file upload
 exports.uploadFile = upload.single('file');
 
 exports.handleFileUpload = async (req, res) => {
+  let filePath;
   try {
     if (!req.file) {
       return res.status(400).json({
@@ -98,10 +116,12 @@ exports.handleFileUpload = async (req, res) => {
       });
     }
 
-    const { filename, originalname, mimetype, size, path: filePath } = req.file;
+    const { filename, originalname, mimetype, size, path: uploadedPath } = req.file;
+    filePath = uploadedPath;
     
     // Extract content from the file
     const content = await extractFileContent(filePath, mimetype);
+    const previewDataUrl = await buildImagePreviewDataUrl(filePath, mimetype);
     
     // Generate URL for the uploaded file
     const baseUrl = process.env.BASE_URL || 'http://localhost:3000';
@@ -110,14 +130,8 @@ exports.handleFileUpload = async (req, res) => {
     console.log('File uploaded successfully:', {
       originalName: originalname,
       filename: filename,
-      fileUrl: fileUrl,
-      contentLength: content.length
-    });
-    
-    console.log('File uploaded successfully:', {
-      originalName: originalname,
-      filename: filename,
-      fileUrl: fileUrl,
+      fileUrl: AUTO_DELETE_UPLOADS ? null : fileUrl,
+      previewGenerated: Boolean(previewDataUrl),
       contentLength: content.length
     });
 
@@ -128,8 +142,9 @@ exports.handleFileUpload = async (req, res) => {
         name: originalname,
         type: mimetype,
         size: size,
-        url: fileUrl,
-        content: content
+        url: AUTO_DELETE_UPLOADS ? null : fileUrl,
+        previewDataUrl,
+        content
       }
     });
 
@@ -139,6 +154,14 @@ exports.handleFileUpload = async (req, res) => {
       status: 'error',
       message: error.message || 'File upload failed'
     });
+  } finally {
+    if (AUTO_DELETE_UPLOADS && filePath) {
+      try {
+        await fs.unlink(filePath);
+      } catch {
+        // ignore cleanup errors
+      }
+    }
   }
 };
 
