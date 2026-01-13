@@ -42,6 +42,9 @@ FILE ANALYSIS:
 - For documents: extract key requirements and respond accordingly.
 
 IMPORTANT RULES:
+- Do NOT recommend products or include product codes for simple greetings (e.g. "hi", "hello", "你好") or small talk.
+- Only recommend products (and include product codes) when the user explicitly asks for recommendations, or when the user provides enough requirements (use case/budget/style) to make a meaningful recommendation.
+- If the user hasn't asked for recommendations yet, respond with a short friendly reply and ask 1-3 clarifying questions instead of listing products.
 - Do NOT mention Solidoro. Do NOT use Solidoro product knowledge.
 - Do NOT invent pricing or availability. If pricing/availability is unclear, advise the user to use the "Contact Us" button to get a quote.
 - Use only the BMW product context provided below when referencing specific products/codes.`;
@@ -250,26 +253,6 @@ async function enhanceProductRecommendations(aiMessage, availableMaterials) {
         });
       }
     });
-  }
-  
-  // If no products found by name/code match, always provide some available products
-  if (products.length === 0 && availableMaterials.length > 0) {
-    console.log('No direct matches found, adding available products for recommendation');
-    // Add first few available products as general recommendations
-    const recommendedProducts = availableMaterials.slice(0, Math.min(3, availableMaterials.length)).map(material => ({
-      code: material.code,
-      name: material.name,
-      category: material.category,
-      series: material.series,
-      description: material.description,
-      price: material.price,
-      imageUrl: material.image,
-      galleryUrls: material.gallery || [],
-      detailUrl: `${baseUrl}/collections?product=${material.code}`,
-      specs: material.specs
-    }));
-    products.push(...recommendedProducts);
-    console.log('Added general recommendations:', recommendedProducts.map(p => p.code));
   }
   
   // Remove duplicates
