@@ -124,7 +124,7 @@ exports.handleFileUpload = async (req, res) => {
     const previewDataUrl = await buildImagePreviewDataUrl(filePath, mimetype);
     
     // Generate URL for the uploaded file
-    const baseUrl = process.env.BASE_URL || 'http://localhost:3000';
+    const baseUrl = process.env.BASE_URL || 'https://bmw-backend-production.up.railway.app';
     const fileUrl = `${baseUrl}/uploads/${filename}`;
     
     console.log('File uploaded successfully:', {

@@ -22,8 +22,8 @@ RECOMMENDATION FORMAT (preferred):
 - When recommending products, write naturally: "I'd recommend the GOODMAN sofa collection (IHS-019)" instead of "**GOODMAN (IHS-019)**".
 - Include 2-4 options with product name, code, and why it fits the user's needs.
 - DO NOT include image links or markdown image syntax in text (product cards will display images automatically).
-- For clickable product links, format as: "Check out the [GOODMAN Sofa Collection](http://localhost:5173/collections?product=IHS-019)" using product name + series/collection.
-- Generate product links using this pattern: [ProductName SeriesName Collection](http://localhost:5173/collections?product=PRODUCT_CODE)
+- DO NOT include any URLs or links in your text responses. Product links will be handled automatically by the system.
+- When mentioning products, simply state the product name and code (e.g., "GOODMAN sofa collection (IHS-019)") without any links.
 - Add line breaks between different product recommendations for better readability.
 - Keep the tone friendly and helpful, not robotic or overly formatted.
 - Example good format:
@@ -31,8 +31,6 @@ RECOMMENDATION FORMAT (preferred):
 Here's what I'd recommend for your interior project:
 
 The GOODMAN sofa collection (IHS-019) would be perfect for your space. It's a luxury curved modular design that combines comfort with modern sophistication.
-
-You can explore more details in the [GOODMAN Sofa Collection](http://localhost:5173/collections?product=IHS-019).
 
 Let me know if you'd like to see other options!
 
@@ -70,10 +68,21 @@ function normalizeAssistantText(text) {
     .replace(/`(.+?)`/g, '$1') // inline code
     .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '$1 ($2)'); // links
 
+  // Remove localhost URLs from text (both markdown links and plain URLs)
+  output = output
+    .replace(/\[([^\]]+)\]\(https?:\/\/localhost[^\s)]*\)/gi, '$1') // Remove markdown links with localhost
+    .replace(/https?:\/\/localhost[^\s)]*/gi, ''); // Remove plain localhost URLs
+
+  // Clean up extra spaces on each line (but preserve newlines)
+  output = output
+    .split('\n')
+    .map(line => line.replace(/[ \t]+/g, ' ').trim())
+    .join('\n');
+
   // Convert unordered lists to a plain bullet character.
   output = output.replace(/^\s*[-*]\s+/gm, '• ');
 
-  // Clean up excessive blank lines.
+  // Clean up excessive blank lines (but preserve intentional double newlines)
   output = output.replace(/\n{3,}/g, '\n\n').trim();
 
   return output;
@@ -210,10 +219,15 @@ async function fetchTopMaterialsForContext(query) {
 // Function to enhance AI response with structured product data
 async function enhanceProductRecommendations(aiMessage, availableMaterials) {
   const products = [];
-  const baseUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+  // Only use FRONTEND_URL if it's a production URL (not localhost)
+  const frontendUrl = process.env.FRONTEND_URL;
+  const baseUrl = frontendUrl && !frontendUrl.includes('localhost') 
+    ? frontendUrl 
+    : null; // Don't generate links if using localhost
   
   console.log('Enhancing recommendations for AI message:', aiMessage.substring(0, 100) + '...');
   console.log('Available materials count:', availableMaterials.length);
+  console.log('Frontend URL:', baseUrl || 'Not set (localhost filtered out)');
   
   // Look for product codes mentioned in the AI message
   availableMaterials.forEach(material => {
@@ -228,7 +242,7 @@ async function enhanceProductRecommendations(aiMessage, availableMaterials) {
         price: material.price,
         imageUrl: material.image,
         galleryUrls: material.gallery || [],
-        detailUrl: `${baseUrl}/collections?product=${material.code}`,
+        detailUrl: baseUrl ? `${baseUrl}/collections?product=${material.code}` : null,
         specs: material.specs
       });
     }
@@ -248,7 +262,7 @@ async function enhanceProductRecommendations(aiMessage, availableMaterials) {
           price: material.price,
           imageUrl: material.image,
           galleryUrls: material.gallery || [],
-          detailUrl: `${baseUrl}/collections?product=${material.code}`,
+          detailUrl: baseUrl ? `${baseUrl}/collections?product=${material.code}` : null,
           specs: material.specs
         });
       }
