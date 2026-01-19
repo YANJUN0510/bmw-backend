@@ -4,13 +4,17 @@ const helmet = require('helmet');
 const morgan = require('morgan');
 const path = require('path');
 const routes = require('./routes');
+const requestContext = require('./middleware/requestContext');
+const { notFoundHandler, errorHandler } = require('./middleware/errors');
 
 const app = express();
 
 // Middleware
 app.use(helmet());
 app.use(cors());
-app.use(morgan('dev'));
+app.use(requestContext);
+morgan.token('requestId', (req) => req.requestId);
+app.use(morgan(':method :url :status :res[content-length] - :response-time ms :requestId'));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -25,21 +29,8 @@ app.get('/health', (req, res) => {
 // Routes
 app.use('/api', routes);
 
-// 404 Handler
-app.use((req, res, next) => {
-  res.status(404).json({
-    message: 'Not Found',
-    status: 'error',
-  });
-});
-
-// Error Handler
-app.use((err, req, res, next) => {
-  console.error(err.stack);
-  res.status(500).json({
-    message: 'Internal Server Error',
-    status: 'error',
-  });
-});
+// 404 + Error handlers
+app.use(notFoundHandler);
+app.use(errorHandler);
 
 module.exports = app;
