@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const homeController = require('../controllers/homeController');
+const authRoutes = require('./authRoutes');
 const buildingMaterialRoutes = require('./buildingMaterialRoutes');
 const buildingMaterialCategoryRoutes = require('./buildingMaterialCategoryRoutes');
 const buildingMaterialSeriesRoutes = require('./buildingMaterialSeriesRoutes');
@@ -15,6 +16,7 @@ const analyticsRoutes = require('./analyticsRoutes');
 const commissionRoutes = require('./commissionRoutes');
 
 router.get('/', homeController.getHome);
+router.use('/auth', authRoutes);
 router.use('/building-materials', buildingMaterialRoutes);
 router.use('/building-material-categories', buildingMaterialCategoryRoutes);
 router.use('/building-material-series', buildingMaterialSeriesRoutes);
