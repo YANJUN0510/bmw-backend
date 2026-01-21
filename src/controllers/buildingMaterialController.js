@@ -1,4 +1,5 @@
 const supabase = require('../config/bmw_supabase');
+const { buildMaterialSearchText, getEmbedding } = require('../lib/embeddings');
 
 const BUCKET_NAME = 'building-materials';
 
@@ -78,6 +79,12 @@ exports.uploadBuildingMaterial = async (req, res) => {
       price: price || null,
     };
 
+    const searchText = buildMaterialSearchText({ code, name, category, series, description });
+    const embedding = await getEmbedding(searchText);
+    if (embedding) {
+      insertData.embedding = embedding;
+    }
+
     const { data, error } = await supabase
       .from('building_material')
       .insert([insertData])
@@ -123,6 +130,29 @@ exports.updateBuildingMaterial = async (req, res) => {
 
     // Remove undefined keys
     Object.keys(updateData).forEach(key => updateData[key] === undefined && delete updateData[key]);
+
+    const shouldRefreshEmbedding = ['name', 'category', 'series', 'description'].some(
+      (key) => key in updateData
+    );
+
+    if (shouldRefreshEmbedding) {
+      const { data: currentRow, error: currentError } = await supabase
+        .from('building_material')
+        .select('name, category, series, description, code')
+        .eq('code', code)
+        .single();
+
+      if (currentError) {
+        console.warn('Failed to load current material for embedding update:', currentError);
+      } else if (currentRow) {
+        const merged = { ...currentRow, ...updateData, code };
+        const searchText = buildMaterialSearchText(merged);
+        const embedding = await getEmbedding(searchText);
+        if (embedding) {
+          updateData.embedding = embedding;
+        }
+      }
+    }
 
     // Handle Main Image
     if (imageFile) {

@@ -1,5 +1,6 @@
 const fetch = require('node-fetch');
 const bmwSupabase = require('../config/bmw_supabase');
+const { getEmbedding } = require('../lib/embeddings');
 
 const BMW_BASE_SYSTEM_MESSAGE = `You are the AI assistant for Building Material Warehouse (BMW), a supplier of premium architectural building materials.
 
@@ -47,8 +48,27 @@ IMPORTANT RULES:
 - Do NOT invent pricing or availability. If pricing/availability is unclear, advise the user to use the "Contact Us" button to get a quote.
 - Use only the BMW product context provided below when referencing specific products/codes.`;
 
-const MAX_CONTEXT_ITEMS = 5;
+const MAX_CONTEXT_ITEMS = 12;
 const MAX_USER_QUERY_LENGTH = 160;
+
+const QUERY_SYNONYMS = [
+  {
+    pattern: /\bsmart mirror\b|智能镜/gi,
+    variants: ['smart mirror', 'intelligent mirror', 'mirror'],
+  },
+];
+
+function expandQueryVariants(query) {
+  if (!query) return [];
+  const variants = new Set([query]);
+  QUERY_SYNONYMS.forEach(({ pattern, variants: mapped }) => {
+    if (pattern.test(query)) {
+      mapped.forEach((item) => variants.add(item));
+    }
+    pattern.lastIndex = 0;
+  });
+  return Array.from(variants).filter(Boolean);
+}
 
 function normalizeAssistantText(text) {
   if (!text) return '';
@@ -129,26 +149,52 @@ function extractCodeCandidate(query) {
   return match ? match[0].replace(/[-_ ]/g, '').toUpperCase() : null;
 }
 
+async function fetchSemanticMaterialsForContext(query) {
+  try {
+    const embedding = await getEmbedding(query);
+    if (!embedding) return [];
+
+    const { data, error } = await bmwSupabase.rpc('match_building_materials', {
+      query_embedding: embedding,
+      match_count: MAX_CONTEXT_ITEMS,
+    });
+
+    if (error) {
+      console.warn('[bmwChat] Semantic search failed:', error.message || error);
+      return [];
+    }
+
+    return Array.isArray(data) ? data : [];
+  } catch (error) {
+    console.warn('[bmwChat] Semantic search exception:', error);
+    return [];
+  }
+}
+
 async function fetchTopMaterialsForContext(query) {
   try {
     const codeCandidate = extractCodeCandidate(query);
-
-    const base = bmwSupabase
-      .from('building_material')
-      .select('name, code, category, series, description, price, image, gallery, specs')
-      .order('created_at', { ascending: false })
-      .limit(MAX_CONTEXT_ITEMS);
+    const buildBaseQuery = () =>
+      bmwSupabase
+        .from('building_material')
+        .select('name, code, category, series, description, price, image, gallery, specs')
+        .order('created_at', { ascending: false })
+        .limit(MAX_CONTEXT_ITEMS);
 
     let { data, error } = { data: null, error: null };
 
     if (codeCandidate) {
-      ({ data, error } = await base.eq('code', codeCandidate));
+      ({ data, error } = await buildBaseQuery().eq('code', codeCandidate));
     } else {
-      const sanitized = sanitizeForPostgrestLike(query);
-      if (sanitized && sanitized.length >= 2) {
+      const variants = expandQueryVariants(query);
+      for (const variant of variants) {
+        const sanitized = sanitizeForPostgrestLike(variant);
+        if (!sanitized || sanitized.length < 2) {
+          continue;
+        }
         const escaped = sanitized.replace(/%/g, '\\%').replace(/_/g, '\\_');
         const pattern = `%${escaped}%`;
-        ({ data, error } = await base.or(
+        ({ data, error } = await buildBaseQuery().or(
           [
             `name.ilike.${pattern}`,
             `code.ilike.${pattern}`,
@@ -157,8 +203,12 @@ async function fetchTopMaterialsForContext(query) {
             `description.ilike.${pattern}`,
           ].join(',')
         ));
-      } else {
-        ({ data, error } = await base);
+        if (!error && Array.isArray(data) && data.length > 0) {
+          break;
+        }
+      }
+      if (!data) {
+        ({ data, error } = await buildBaseQuery());
       }
     }
 
@@ -297,7 +347,10 @@ exports.handleBmwChat = async (req, res) => {
     }
 
     const query = extractSearchQuery(messages);
-    const materials = await fetchTopMaterialsForContext(query);
+    const semanticMaterials = await fetchSemanticMaterialsForContext(query);
+    const materials = semanticMaterials.length > 0
+      ? semanticMaterials
+      : await fetchTopMaterialsForContext(query);
 
     console.log('=== DEBUG: Database query results ===');
     console.log('Query:', query);
