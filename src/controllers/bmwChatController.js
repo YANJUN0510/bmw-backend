@@ -149,6 +149,93 @@ function extractCodeCandidate(query) {
   return match ? match[0].replace(/[-_ ]/g, '').toUpperCase() : null;
 }
 
+function isSeriesListRequest(query) {
+  if (!query) return false;
+  const normalized = query.toLowerCase();
+  const hasSeriesKeyword = /series|系列/.test(normalized);
+  const hasListIntent = /(哪些|哪(些|个)|有哪些|什么|list|show|介绍|讲讲)/.test(normalized);
+  return hasSeriesKeyword && hasListIntent;
+}
+
+function formatSeriesSummary(seriesMap) {
+  const entries = Object.entries(seriesMap);
+  if (entries.length === 0) return '';
+
+  return entries
+    .map(([category, seriesList]) => {
+      const uniqueSeries = Array.from(new Set(seriesList)).filter(Boolean).sort();
+      const label = category ? `${category}: ` : '';
+      return `${label}${uniqueSeries.join(', ')}`;
+    })
+    .join('\n');
+}
+
+async function fetchSeriesForQuery(query, materials = []) {
+  const seriesMap = {};
+  const sanitized = sanitizeForPostgrestLike(query);
+
+  const buildSeriesMap = (rows = []) => {
+    rows.forEach((row) => {
+      const series = row?.series;
+      if (!series) return;
+      const category = row?.category || 'Uncategorized';
+      if (!seriesMap[category]) {
+        seriesMap[category] = [];
+      }
+      seriesMap[category].push(series);
+    });
+  };
+
+  try {
+    if (sanitized && sanitized.length >= 2) {
+      const escaped = sanitized.replace(/%/g, '\\%').replace(/_/g, '\\_');
+      const pattern = `%${escaped}%`;
+
+      const { data, error } = await bmwSupabase
+        .from('building_material')
+        .select('series, category, name, description')
+        .not('series', 'is', null)
+        .or(
+          [
+            `category.ilike.${pattern}`,
+            `series.ilike.${pattern}`,
+            `name.ilike.${pattern}`,
+            `description.ilike.${pattern}`,
+          ].join(',')
+        )
+        .limit(500);
+
+      if (error) {
+        console.warn('[bmwChat] Series query failed:', error.message || error);
+      } else {
+        buildSeriesMap(data);
+      }
+    }
+
+    if (Object.keys(seriesMap).length === 0 && materials.length > 0) {
+      const categories = Array.from(new Set(materials.map((m) => m.category).filter(Boolean)));
+      if (categories.length > 0) {
+        const { data, error } = await bmwSupabase
+          .from('building_material')
+          .select('series, category')
+          .not('series', 'is', null)
+          .in('category', categories)
+          .limit(1000);
+
+        if (error) {
+          console.warn('[bmwChat] Series fallback failed:', error.message || error);
+        } else {
+          buildSeriesMap(data);
+        }
+      }
+    }
+  } catch (error) {
+    console.warn('[bmwChat] Series lookup error:', error);
+  }
+
+  return seriesMap;
+}
+
 async function fetchSemanticMaterialsForContext(query) {
   try {
     const embedding = await getEmbedding(query);
@@ -360,6 +447,15 @@ exports.handleBmwChat = async (req, res) => {
     }
 
     const contextLines = materials.length > 0 ? materials.map(buildMaterialLine).join('\n') : 'No relevant products found.';
+    let seriesListSection = '';
+
+    if (isSeriesListRequest(query)) {
+      const seriesMap = await fetchSeriesForQuery(query, materials);
+      const summary = formatSeriesSummary(seriesMap);
+      if (summary) {
+        seriesListSection = `\n\nSERIES LIST (AUTHORITATIVE):\n${summary}\n\nIf the user asks about series, list ALL series shown above without omitting any.`;
+      }
+    }
 
     // Process messages and include file content
     const processedMessages = messages.map(msg => {
@@ -379,7 +475,7 @@ exports.handleBmwChat = async (req, res) => {
       };
     });
 
-    const systemContent = `${BMW_BASE_SYSTEM_MESSAGE}\n\nBMW COLLECTIONS (TOP ${MAX_CONTEXT_ITEMS} MATCHES):\n${contextLines}`;
+    const systemContent = `${BMW_BASE_SYSTEM_MESSAGE}\n\nBMW COLLECTIONS (TOP ${MAX_CONTEXT_ITEMS} MATCHES):\n${contextLines}${seriesListSection}`;
     
     // If no materials found, add a note
     const finalSystemContent = materials.length === 0 ? 
