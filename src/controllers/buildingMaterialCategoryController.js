@@ -5,7 +5,7 @@ const BUCKET_NAME = 'building-materials';
 exports.getAllCategories = async (req, res) => {
   try {
     const { data, error } = await supabase
-      .from('building_material_category')
+      .from('furniture_category')
       .select('*')
       .order('id', { ascending: true });
 
@@ -22,7 +22,7 @@ exports.getCategoryById = async (req, res) => {
   try {
     const { id } = req.params;
     const { data, error } = await supabase
-      .from('building_material_category')
+      .from('furniture_category')
       .select('*')
       .eq('id', id)
       .single();
@@ -71,7 +71,7 @@ exports.createCategory = async (req, res) => {
 
     // Insert DB
     const { data, error } = await supabase
-      .from('building_material_category')
+      .from('furniture_category')
       .insert([{ category, description, prefix, image: publicUrl }])
       .select();
 
@@ -120,7 +120,7 @@ exports.updateCategory = async (req, res) => {
     }
 
     const { data, error } = await supabase
-      .from('building_material_category')
+      .from('furniture_category')
       .update(updates)
       .eq('id', id)
       .select();
@@ -139,7 +139,7 @@ exports.deleteCategory = async (req, res) => {
     const { id } = req.params;
 
     const { error } = await supabase
-      .from('building_material_category')
+      .from('furniture_category')
       .delete()
       .eq('id', id);
 

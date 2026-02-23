@@ -86,7 +86,7 @@ exports.uploadBuildingMaterial = async (req, res) => {
     }
 
     const { data, error } = await supabase
-      .from('building_material')
+      .from('furniture_items')
       .insert([insertData])
       .select();
 
@@ -137,7 +137,7 @@ exports.updateBuildingMaterial = async (req, res) => {
 
     if (shouldRefreshEmbedding) {
       const { data: currentRow, error: currentError } = await supabase
-        .from('building_material')
+        .from('furniture_items')
         .select('name, category, series, description, code')
         .eq('code', code)
         .single();
@@ -210,7 +210,7 @@ exports.updateBuildingMaterial = async (req, res) => {
     }
 
     const { data, error } = await supabase
-      .from('building_material')
+      .from('furniture_items')
       .update(updateData)
       .eq('code', code)
       .select();
@@ -244,7 +244,7 @@ exports.deleteBuildingMaterial = async (req, res) => {
 
     // 1. Get building material to find image paths
     const { data: material, error: fetchError } = await supabase
-      .from('building_material')
+      .from('furniture_items')
       .select('image, gallery')
       .eq('code', code)
       .single();
@@ -258,7 +258,7 @@ exports.deleteBuildingMaterial = async (req, res) => {
 
     // 2. Delete from Database
     const { error: deleteError } = await supabase
-      .from('building_material')
+      .from('furniture_items')
       .delete()
       .eq('code', code);
 
@@ -315,7 +315,7 @@ exports.deleteBuildingMaterial = async (req, res) => {
 exports.getAllBuildingMaterials = async (req, res) => {
   try {
     const { data, error } = await supabase
-      .from('building_material')
+      .from('furniture_items')
       .select('*')
       .order('created_at', { ascending: false });
 
@@ -341,7 +341,7 @@ exports.getBuildingMaterialByCode = async (req, res) => {
   try {
     const { code } = req.params;
     const { data, error } = await supabase
-      .from('building_material')
+      .from('furniture_items')
       .select('*')
       .eq('code', code)
       .single();
@@ -369,7 +369,7 @@ exports.getBuildingMaterialByCode = async (req, res) => {
 exports.getAllCategoriesAndSeries = async (req, res) => {
   try {
     const { data, error } = await supabase
-      .from('building_material')
+      .from('furniture_items')
       .select('category, series');
 
     if (error) {

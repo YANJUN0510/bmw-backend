@@ -5,7 +5,7 @@ const BUCKET_NAME = 'building-materials';
 exports.getAllSeries = async (req, res) => {
   try {
     const { data, error } = await supabase
-      .from('building_material_series')
+      .from('furniture_series')
       .select('*')
       .order('id', { ascending: true });
 
@@ -22,7 +22,7 @@ exports.getSeriesById = async (req, res) => {
   try {
     const { id } = req.params;
     const { data, error } = await supabase
-      .from('building_material_series')
+      .from('furniture_series')
       .select('*')
       .eq('id', id)
       .single();
@@ -69,7 +69,7 @@ exports.createSeries = async (req, res) => {
       .getPublicUrl(filePath);
 
     const { data, error } = await supabase
-      .from('building_material_series')
+      .from('furniture_series')
       .insert([{ name, pdf: publicUrl }])
       .select();
 
@@ -116,7 +116,7 @@ exports.updateSeries = async (req, res) => {
     }
 
     const { data, error } = await supabase
-      .from('building_material_series')
+      .from('furniture_series')
       .update(updates)
       .eq('id', id)
       .select();
@@ -139,7 +139,7 @@ exports.deleteSeries = async (req, res) => {
     const { id } = req.params;
 
     const { error } = await supabase
-      .from('building_material_series')
+      .from('furniture_series')
       .delete()
       .eq('id', id);
 
